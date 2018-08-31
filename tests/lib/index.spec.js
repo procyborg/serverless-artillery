@@ -817,6 +817,7 @@ scenarios:
 
       let log
       let logs
+      let validateLocalAssetsStub
       beforeEach(() => {
         ({ log } = console)
         logs = []
@@ -827,10 +828,12 @@ scenarios:
             logs.push(args.join(' '))
           }
         }
+        validateLocalAssetsStub = sinon.stub(slsart.impl, 'validateLocalAssets').returns()
       })
       afterEach(() => {
         console.log = log
         process.argv = argv.slice(0)
+        validateLocalAssetsStub.restore()
       })
       describe('error handling', () => {
         let implParseInputStub
@@ -849,6 +852,11 @@ scenarios:
           implParseInputStub.throws(new task.def.TaskError('task.error'))
           return slsart.invoke({ d: testJsonScriptStringified })
             .should.be.rejectedWith(task.def.TaskError, 'task.error')
+        })
+        it('handles and reports assets version mismatch errors, exiting the process', () => {
+          validateLocalAssetsStub.throws(new Error('error'))
+          return slsart.invoke({ d: testJsonScriptStringified })
+            .should.be.rejectedWith(task.def.Error, 'error')
         })
         it('handles and reports unexpected errors, exiting the process', () => {
           implParseInputStub.throws(new Error('error'))
@@ -1221,6 +1229,7 @@ scenarios:
       let scriptStub
       let configureStub
       let fileExistsStub
+      let validateLocalAssetsStub
       let writeBackupStub
       let fsReadFileAsyncStub
       let fsWriteFileAsyncStub
@@ -1228,6 +1237,7 @@ scenarios:
         scriptStub = sinon.stub(slsart, 'script').resolves()
         configureStub = sinon.stub(slsart, 'configure').resolves()
         fileExistsStub = sinon.stub(slsart.impl, 'fileExists').returns(true)
+        validateLocalAssetsStub = sinon.stub(slsart.impl, 'validateLocalAssets').returns()
         writeBackupStub = sinon.stub(slsart.impl, 'writeBackup').resolves()
         fsReadFileAsyncStub = sinon.stub(fs, 'readFileAsync').resolves(JSON.stringify({
           provider: {
@@ -1243,6 +1253,7 @@ scenarios:
         scriptStub.restore()
         configureStub.restore()
         fileExistsStub.restore()
+        validateLocalAssetsStub.restore()
         writeBackupStub.restore()
         fsReadFileAsyncStub.restore()
         fsWriteFileAsyncStub.restore()
@@ -1264,6 +1275,8 @@ scenarios:
             writeBackupStub.should.not.have.been.called
           })
       })
+      it('validates local assets version is up to date', () => slsart.monitor({}).should.be.fulfilled
+        .then(() => validateLocalAssetsStub.should.have.been.called))
       it('rejects the monitor command if running script fails', () => {
         fileExistsStub.returns(false)
         scriptStub.returns(BbPromise.reject(new Error('reasons')))
@@ -1277,6 +1290,11 @@ scenarios:
       it('rejects the monitor command if reading serverless.yml fails', () => {
         fsReadFileAsyncStub.returns(BbPromise.reject(new Error('reasons')))
         return slsart.monitor({}).should.be.rejected
+      })
+      it('rejects the monitor command if local assets validation fails', () => {
+        validateLocalAssetsStub.throws('Error')
+        return slsart.monitor({}).should.be.rejected
+          .then(() => fsWriteFileAsyncStub.should.not.have.been.called)
       })
     })
   })
